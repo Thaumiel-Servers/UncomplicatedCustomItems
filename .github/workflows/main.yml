@@ -43,6 +43,11 @@ jobs:
         run: |
           mv "$REFERENCES_PATH/Assembly-CSharp-Publicized.dll" \
              "$REFERENCES_PATH/Assembly-CSharp.dll"
+             
+      - name: Fix Mirror name
+        run: |
+          mv "$REFERENCES_PATH/Mirror.dll" \
+             "$REFERENCES_PATH/Mirror-Publicized.dll"
 
       # -------- Build Exiled --------
       - name: Build Exiled
