@@ -1,0 +1,101 @@
+name: Build UncomplicatedCustomItems (Edge)
+
+on:
+  push:
+    branches:
+      - Dev
+    paths-ignore:
+      - '**/*.md'
+
+  pull_request:
+    branches:
+      - Dev
+    paths-ignore:
+      - '**/*.md'
+
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    env:
+      REFERENCES_URL: https://exmod-team.github.io/SL-References/Dev.zip
+      REFERENCES_PATH: ${{ github.workspace }}/References
+      PROJECT_PATH: UncomplicatedCustomItems/UncomplicatedCustomItems.csproj
+      RELEASE_TAG: edge
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Download references
+        run: |
+          wget -O refs.zip "$REFERENCES_URL"
+          unzip refs.zip -d "$REFERENCES_PATH"
+
+      - name: Fix Assembly-CSharp name
+        run: |
+          mv "$REFERENCES_PATH/Assembly-CSharp-Publicized.dll" \
+             "$REFERENCES_PATH/Assembly-CSharp.dll"
+
+      # -------- Build Exiled --------
+      - name: Build Exiled
+        env:
+          EXILED_REFERENCES: ${{ env.REFERENCES_PATH }}
+        run: |
+          dotnet build "$PROJECT_PATH" \
+            -c Exiled \
+            -p:Platform=x64
+
+      # -------- Build LabApi --------
+      - name: Build LabApi
+        env:
+          EXILED_REFERENCES: ${{ env.REFERENCES_PATH }}
+        run: |
+          dotnet build "$PROJECT_PATH" \
+            -c LabApi \
+            -p:Platform=x64
+
+      - name: Collect outputs
+        run: |
+          mkdir release
+          find . -name "UncomplicatedCustomItems-*.dll" -exec cp {} release/ \;
+
+      - name: Get commit info
+        id: commit
+        run: |
+          echo "sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+          echo "msg<<EOF" >> $GITHUB_OUTPUT
+          git log -1 --pretty=%B >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create or update Edge release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release edit "$RELEASE_TAG" \
+              --title "Edge (${{
+                steps.commit.outputs.sha
+              }})" \
+              --notes "${{ steps.commit.outputs.msg }}"
+          else
+            gh release create "$RELEASE_TAG" \
+              --title "Edge (${{
+                steps.commit.outputs.sha
+              }})" \
+              --notes "${{ steps.commit.outputs.msg }}" \
+              --prerelease
+          fi
+
+      - name: Upload DLLs to Edge release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "$RELEASE_TAG" release/*.dll --clobber
